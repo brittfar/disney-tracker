@@ -75,9 +75,10 @@ def fetch_park_data(park_name, park_id):
         list: List of processed ride records
     """
     url = f"https://api.themeparks.wiki/v1/entity/{park_id}/live"
+    headers = {'User-Agent': 'DisneyTracker/1.0 (contact: yourname@example.com)'}
     
     try:
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
         
         data = response.json()

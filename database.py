@@ -21,6 +21,10 @@ class WaitTime(Base):
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 if DATABASE_URL:
+    # Fix Render URL format for SQLAlchemy compatibility
+    if DATABASE_URL.startswith('postgres://'):
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+    
     # Use PostgreSQL cloud database
     print(f"Using cloud database: {DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else 'PostgreSQL'}")
     engine = create_engine(DATABASE_URL)
