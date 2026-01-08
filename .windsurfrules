@@ -1,0 +1,14 @@
+# DISNEY APP PROJECT RULES
+
+## TECH STACK
+- Backend: Python (FastAPI)
+- Database: Supabase (Postgres)
+- Data Source: ThemeParks.wiki API (unofficial)
+- Frontend: Flutter (future phase)
+
+## BEHAVIORS
+- **NO PLACEHOLDERS:** Never leave "TODO" or "insert logic here". Write the full, working code.
+- **ERROR HANDLING:** Every network request (API call) must have a try/except block.
+- **STEP-BY-STEP:** If a task is complex, break it down. Do not try to write 5 files in one message.
+- **USER CONTEXT:** The user is a beginner. Explain *how* to run the code (e.g., "Run `python main.py` in the terminal") after generating it.
+- **MEMORY:** Always check `wait_times.db` schema before writing SQL queries.
