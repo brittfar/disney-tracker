@@ -1,4 +1,6 @@
 #!/bin/bash
+echo "Initializing Database..."
+python init_db.py
 echo "Starting Scheduler..."
 python scheduler.py &
 echo "Starting Dashboard..."
