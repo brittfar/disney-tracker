@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# Get URL and fix Postgres format for Render
+# Fix Render URL
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///disney.db')
 if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
@@ -11,3 +11,7 @@ if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# The missing helper function
+def get_session():
+    return SessionLocal()
