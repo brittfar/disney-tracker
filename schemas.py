@@ -1,26 +1,11 @@
-from pydantic import BaseModel
-from datetime import datetime
-from typing import Optional
+from sqlalchemy import Column, Integer, String, DateTime
+from database import Base
 
-class RideSchema(BaseModel):
-    """
-    Pydantic model for ride wait time data.
-    Hides internal database ID and formats output nicely.
-    """
-    ride_name: str
-    park_name: str
-    wait_time: int
-    is_open: bool
-    timestamp: datetime
-    
-    class Config:
-        from_attributes = True
-
-class ParkSchema(BaseModel):
-    """
-    Pydantic model for park names.
-    """
-    park_name: str
-    
-    class Config:
-        from_attributes = True
+class WaitTime(Base):
+    __tablename__ = "wait_times"
+    id = Column(Integer, primary_key=True, index=True)
+    ride_name = Column(String, index=True)
+    wait_time = Column(Integer)
+    status = Column(String)
+    last_updated = Column(DateTime)
+    park_name = Column(String)
