@@ -5,9 +5,14 @@ from datetime import datetime
 import sqlite3
 import prediction
 import styles
+from database import engine, Base
+from schemas import WaitTime
 
 # Apply mobile CSS styling
 st.markdown(styles.MOBILE_CSS, unsafe_allow_html=True)
+
+# Database self-healing - ensure tables exist
+Base.metadata.create_all(bind=engine)
 
 # Configuration
 st.set_page_config(
@@ -50,6 +55,17 @@ def main():
     
     # Sidebar filter for park selection
     st.sidebar.header("Filters")
+    
+    # Manual refresh button
+    if st.sidebar.button('🔄 Force Update Data'):
+        with st.spinner('Fetching fresh data from Disney...'):
+            try:
+                import scraper
+                scraper.run_scraper_job()
+                st.success('Data updated!')
+                st.rerun()
+            except Exception as e:
+                st.error(f'Error updating data: {e}')
     
     # Get unique parks
     parks = sorted(df['park_name'].unique())

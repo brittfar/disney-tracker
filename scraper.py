@@ -204,5 +204,31 @@ def main():
     
     print(f"\nScraping complete. Total records inserted: {total_records}")
 
+def run_scraper_job():
+    """
+    Run a single scraping job for manual dashboard refresh.
+    This function can be called from the dashboard to force data updates.
+    """
+    print("Manual scraping job initiated from dashboard...")
+    parks = discover_parks()
+    
+    if not parks:
+        print("No parks discovered. Exiting.")
+        return
+    
+    total_records = 0
+    for park_name, park_id in parks.items():
+        print(f"Fetching data for {park_name}...")
+        ride_records = fetch_park_data(park_name, park_id)
+        
+        if ride_records:
+            inserted_count = insert_ride_data(ride_records)
+            print(f"Successfully inserted {inserted_count} records for {park_name}")
+            total_records += inserted_count
+        else:
+            print(f"No data retrieved for {park_name}")
+    
+    print(f"Manual scraping complete. Total records inserted: {total_records}")
+
 if __name__ == "__main__":
     main()
