@@ -1,8 +1,9 @@
 import requests
-import json
-from datetime import datetime
-from database import get_session
-from schemas import WaitTime
+from datetime import datetime, timezone
+# --- THE FIX IS HERE ---
+from database import get_session   # Connection from database.py
+from schemas import WaitTime       # Table definition from schemas.py
+# -----------------------
 
 # Walt Disney World Resort parent ID
 WALT_DISNEY_WORLD_RESORT_ID = "e957da41-3552-4cf6-b636-5babc5cbc4e5"

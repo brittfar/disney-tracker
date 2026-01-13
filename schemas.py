@@ -3,6 +3,7 @@ from database import Base
 
 class WaitTime(Base):
     __tablename__ = "wait_times"
+
     id = Column(Integer, primary_key=True, index=True)
     ride_name = Column(String, index=True)
     wait_time = Column(Integer)

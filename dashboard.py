@@ -2,8 +2,10 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import time
+# --- THE FIX IS HERE ---
 from database import engine, Base, SessionLocal
 from schemas import WaitTime
+# -----------------------
 
 # Ensure database tables exist
 Base.metadata.create_all(bind=engine)
