@@ -5,124 +5,77 @@ from database import get_session   # Connection from database.py
 from schemas import WaitTime       # Table definition from schemas.py
 # -----------------------
 
-# Walt Disney World Resort parent ID
-WALT_DISNEY_WORLD_RESORT_ID = "e957da41-3552-4cf6-b636-5babc5cbc4e5"
+# Queue-Times.com Park IDs
+DISNEY_PARKS = {
+    "Magic Kingdom Park": 6,
+    "EPCOT": 5,
+    "Disney's Hollywood Studios": 7,
+    "Disney's Animal Kingdom Theme Park": 8
+}
 
 def discover_parks():
     """
-    Discover all Disney parks by querying the Walt Disney World Resort parent entity
-    and extracting unique park IDs from the children.
+    Return Disney World parks using Queue-Times.com park IDs.
     
     Returns:
-        dict: Dictionary mapping park names to their entity IDs
+        dict: Dictionary mapping park names to their Queue-Times.com IDs
     """
-    url = f"https://api.themeparks.wiki/v1/entity/{WALT_DISNEY_WORLD_RESORT_ID}/children"
+    print("Using Queue-Times.com park IDs...")
+    return DISNEY_PARKS
+
+def fetch_park_data(park_name, park_id):
+    """
+    Fetch live ride data from Queue-Times.com API for a specific park.
+    
+    Args:
+        park_name (str): Name of the park
+        park_id (int): Queue-Times.com park ID
+    
+    Returns:
+        list: List of processed ride records
+    """
+    url = f"https://queue-times.com/parks/{park_id}/queue_times.json"
+    
+    print(f"Fetching data from {url}...")
     
     try:
         response = requests.get(url, timeout=30)
         response.raise_for_status()
         
         data = response.json()
-        park_ids = {}
-        
-        # The API returns a dict with a 'children' key
-        if isinstance(data, dict) and 'children' in data:
-            children = data['children']
-            
-            # Collect unique park IDs from parentId fields
-            unique_parent_ids = set()
-            for child in children:
-                parent_id = child.get('parentId')
-                if parent_id and parent_id != WALT_DISNEY_WORLD_RESORT_ID:
-                    unique_parent_ids.add(parent_id)
-            
-            # Now get details for each unique park ID
-            for park_id in unique_parent_ids:
-                try:
-                    park_url = f"https://api.themeparks.wiki/v1/entity/{park_id}"
-                    park_response = requests.get(park_url, timeout=30)
-                    park_response.raise_for_status()
-                    
-                    park_data = park_response.json()
-                    
-                    if park_data.get('entityType') == 'PARK':
-                        park_name = park_data.get('name', 'Unknown Park')
-                        park_ids[park_name] = park_id
-                        
-                except requests.exceptions.RequestException:
-                    # If we can't get park details, skip this ID
-                    continue
-        
-        return park_ids
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Error discovering parks: {e}")
-        return {}
-    except json.JSONDecodeError as e:
-        print(f"Error parsing park discovery JSON: {e}")
-        return {}
-    except Exception as e:
-        print(f"Unexpected error discovering parks: {e}")
-        return {}
-
-def fetch_park_data(park_name, park_id):
-    """
-    Fetch live ride data from ThemeParks.wiki API for a specific park.
-    
-    Args:
-        park_name (str): Name of the park
-        park_id (str): ThemeParks.wiki entity ID for the park
-    
-    Returns:
-        list: List of processed ride records
-    """
-    url = f"https://api.themeparks.wiki/v1/entity/{park_id}/live"
-    headers = {'User-Agent': 'DisneyTracker/1.0 (contact: yourname@example.com)'}
-    
-    print(f"Fetching data from {url}...")
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        
-        data = response.json()
         rides = []
         
-        if 'liveData' in data and isinstance(data['liveData'], list):
-            for i, ride in enumerate(data['liveData']):
-                # Filter for ATTRACTIONs only (ignore SHOW, RESTAURANT, etc.)
-                if ride.get('entityType') == 'ATTRACTION':
-                    ride_name = ride.get('name', 'Unknown Ride')
-                    
-                    # Get wait time from the correct nested structure
-                    wait_time = 0
-                    is_open = True
-                    
-                    # Extract status first
-                    status = ride.get('status', 'CLOSED')
-                    is_open = status == 'OPERATING'
-                    
-                    # Extract wait time from queue.STANDBY.waitTime
-                    if 'queue' in ride and isinstance(ride['queue'], dict):
-                        queue_data = ride['queue']
-                        standby_data = queue_data.get('STANDBY', {})
-                        wait_time = standby_data.get('waitTime', 0) or 0
-                    
-                    # Force wait time to 0 if ride is closed or down
-                    if not is_open or status in ['CLOSED', 'DOWN']:
-                        wait_time = 0
-                    
-                    # Debug logging for first 3 rides
-                    if i < 3:
-                        print(f"DEBUG: {ride['name']} -> Status: {ride['status']}, Wait: {wait_time}")
-                    
-                    rides.append({
-                        'ride_name': ride_name,
-                        'park_name': park_name,
-                        'wait_time': wait_time,
-                        'is_open': is_open,
-                        'timestamp': datetime.utcnow()
-                    })
+        # Parse Queue-Times.com JSON structure: lands -> rides
+        if 'lands' in data and isinstance(data['lands'], list):
+            for land in data['lands']:
+                if 'rides' in land and isinstance(land['rides'], list):
+                    for ride in land['rides']:
+                        ride_name = ride.get('name', 'Unknown Ride')
+                        wait_time = ride.get('wait_time', 0) or 0
+                        is_open = ride.get('is_open', False)
+                        last_updated_str = ride.get('last_updated', '')
+                        
+                        # Convert last_updated string to datetime object
+                        try:
+                            if last_updated_str:
+                                # Queue-Times.com typically provides ISO format
+                                last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+                            else:
+                                last_updated = datetime.utcnow()
+                        except (ValueError, AttributeError):
+                            last_updated = datetime.utcnow()
+                        
+                        # Debug logging for first 3 rides
+                        if len(rides) < 3:
+                            print(f"DEBUG: {ride_name} -> Status: {'Open' if is_open else 'Closed'}, Wait: {wait_time}")
+                        
+                        rides.append({
+                            'ride_name': ride_name,
+                            'park_name': park_name,
+                            'wait_time': wait_time,
+                            'is_open': is_open,
+                            'timestamp': last_updated
+                        })
         
         # Check if we found any valid rides
         if not rides:
