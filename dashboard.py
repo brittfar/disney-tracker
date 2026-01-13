@@ -75,6 +75,28 @@ def main():
         st.warning('⚠️ Database is empty. Click "Force Update Data" in the sidebar to start!')
         return
     
+    # Historical trends section
+    st.header("📉 Wait Time Trends")
+    
+    # Filter data for last 24 hours
+    df['last_updated'] = pd.to_datetime(df['last_updated'])
+    twenty_four_hours_ago = pd.Timestamp.now() - pd.Timedelta(hours=24)
+    recent_df = df[df['last_updated'] >= twenty_four_hours_ago].copy()
+    
+    if not recent_df.empty:
+        # Get top 5 most popular rides (most data points)
+        ride_counts = recent_df['ride_name'].value_counts().head(5)
+        popular_rides = recent_df[recent_df['ride_name'].isin(ride_counts.index)]
+        
+        # Create line chart
+        fig = px.line(popular_rides, x='last_updated', y='wait_time', color='ride_name', 
+                      title='Wait Times Over Time (Last 24 Hours)',
+                      labels={'last_updated': 'Time', 'wait_time': 'Wait Time (min)', 'ride_name': 'Ride'})
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No data available for the last 24 hours.")
+    
     # Get latest data for each ride
     latest_data = get_latest_data(df)
     
