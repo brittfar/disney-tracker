@@ -8,6 +8,20 @@ import re
 from database import get_session
 from schemas import WaitTime
 
+# Headers to bypass bot detection
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Cache-Control': 'max-age=0'
+}
+
 # Queue-Times.com Ride IDs for all Disney World parks
 DISNEY_RIDES = {
     "Magic Kingdom Park": {
@@ -226,16 +240,16 @@ def backfill_historical_data(days=30, offset=0, start_year=2022):
                     
                     print(f"    Fetching {ride_name} data...")
                     
-                    # Make request with headers
-                    headers = {
-                        'User-Agent': 'DisneyTracker/1.0 (Historical Data Collection)',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5',
-                        'Accept-Encoding': 'gzip, deflate',
-                        'Connection': 'keep-alive',
-                    }
+                    # Make request with proper headers
+                    response = requests.get(url, headers=HEADERS, timeout=10)
                     
-                    response = requests.get(url, headers=headers, timeout=30)
+                    # Debug: Print response status
+                    print(f"      Response Status: {response.status_code}")
+                    
+                    if response.status_code != 200:
+                        print(f"      ✗ HTTP Error: {response.status_code}")
+                        continue
+                    
                     response.raise_for_status()
                     
                     # Extract graph data from the page
@@ -266,7 +280,13 @@ def backfill_historical_data(days=30, offset=0, start_year=2022):
                         else:
                             print(f"      ⚠ No valid data found")
                     else:
+                        # Enhanced debugging for failed data extraction
                         print(f"      ⚠ No graph data found")
+                        if response.status_code == 200:
+                            print(f"      WARNING: Page loaded but regex failed. Length: {len(response.text)}")
+                            # Print first 500 characters for debugging
+                            preview = response.text[:500].replace('\n', ' ').strip()
+                            print(f"      Page preview: {preview}...")
                     
                     # Rate limiting - be polite to their server
                     time.sleep(1.0)
