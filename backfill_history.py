@@ -196,8 +196,10 @@ def backfill_historical_data(days=30):
                                 ride_name=record['ride_name'],
                                 park_name=record['park_name'],
                                 wait_time=record['wait_time'],
-                                is_open=record['is_open'],
-                                timestamp=record['timestamp']
+                                # Convert boolean is_open to String status
+                                status='Operating' if record['is_open'] else 'Closed',
+                                # Map timestamp to last_updated
+                                last_updated=record['timestamp']
                             )
                             session.add(wait_time_record)
                         
