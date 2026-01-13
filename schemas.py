@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean
 from database import Base
 
 class WaitTime(Base):
@@ -10,3 +10,12 @@ class WaitTime(Base):
     status = Column(String)
     last_updated = Column(DateTime)
     park_name = Column(String)
+
+class WeatherHistory(Base):
+    __tablename__ = "weather_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, index=True)
+    temperature = Column(Float)
+    precipitation = Column(Float)
+    is_rainy = Column(Boolean)  # True if precipitation > 0.5
