@@ -79,6 +79,8 @@ def fetch_park_data(park_name, park_id):
     url = f"https://api.themeparks.wiki/v1/entity/{park_id}/live"
     headers = {'User-Agent': 'DisneyTracker/1.0 (contact: yourname@example.com)'}
     
+    print(f"Fetching data from {url}...")
+    
     try:
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
@@ -87,7 +89,7 @@ def fetch_park_data(park_name, park_id):
         rides = []
         
         if 'liveData' in data and isinstance(data['liveData'], list):
-            for ride in data['liveData']:
+            for i, ride in enumerate(data['liveData']):
                 # Filter for ATTRACTIONs only (ignore SHOW, RESTAURANT, etc.)
                 if ride.get('entityType') == 'ATTRACTION':
                     ride_name = ride.get('name', 'Unknown Ride')
@@ -110,6 +112,10 @@ def fetch_park_data(park_name, park_id):
                     if not is_open or status in ['CLOSED', 'DOWN']:
                         wait_time = 0
                     
+                    # Debug logging for first 3 rides
+                    if i < 3:
+                        print(f"DEBUG: {ride['name']} -> Status: {ride['status']}, Wait: {wait_time}")
+                    
                     rides.append({
                         'ride_name': ride_name,
                         'park_name': park_name,
@@ -117,6 +123,10 @@ def fetch_park_data(park_name, park_id):
                         'is_open': is_open,
                         'timestamp': datetime.utcnow()
                     })
+        
+        # Check if we found any valid rides
+        if not rides:
+            print("WARNING: No valid rides found. API might be reporting everything as Closed.")
         
         # Log summary
         print(f"Found {len(rides)} active rides. Sample: {rides[0]['ride_name'] if rides else 'None'} = {rides[0]['wait_time'] if rides else 0} min")
