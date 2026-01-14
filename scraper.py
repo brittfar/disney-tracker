@@ -1,4 +1,5 @@
-import requests
+import cloudscraper
+import json
 from datetime import datetime, timezone
 # --- THE FIX IS HERE ---
 from database import get_session   # Connection from database.py
@@ -38,11 +39,25 @@ def fetch_park_data(park_name, park_id):
     
     print(f"Fetching data from {url}...")
     
+    # Initialize cloudscraper
+    scraper = cloudscraper.create_scraper()
+    
     try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
+        response = scraper.get(url)
         
-        data = response.json()
+        # Check response status
+        if not hasattr(response, 'status_code') or response.status_code != 200:
+            print(f"WARNING: Received HTTP {response.status_code if hasattr(response, 'status_code') else 'Unknown'}")
+            return []
+        
+        # Try to parse JSON
+        try:
+            data = response.json()
+        except json.JSONDecodeError:
+            print("ERROR: API returned valid HTTP but invalid JSON. Likely a Cloudflare Captcha page.")
+            if hasattr(response, 'text'):
+                print(f"DEBUG: Response preview: {response.text[:200]}")
+            return []
         rides = []
         
         # Parse Queue-Times.com JSON structure: lands -> rides
@@ -85,14 +100,8 @@ def fetch_park_data(park_name, park_id):
         print(f"Found {len(rides)} active rides. Sample: {rides[0]['ride_name'] if rides else 'None'} = {rides[0]['wait_time'] if rides else 0} min")
         return rides
         
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching data for {park_name}: {e}")
-        return []
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON for {park_name}: {e}")
-        return []
     except Exception as e:
-        print(f"Unexpected error for {park_name}: {e}")
+        print(f"Error fetching data for {park_name}: {e}")
         return []
 
 def insert_ride_data(ride_records):
