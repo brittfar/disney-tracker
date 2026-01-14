@@ -91,96 +91,38 @@ def extract_graph_data(html_content):
     """
     Extract historical wait time data from the JavaScript graph data on the page.
     """
-    try:
-        # Parse HTML with BeautifulSoup
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Look through all script tags for ride data
-        script_tags = soup.find_all('script')
-        
-        for script in script_tags:
-            if script.string:
-                script_content = script.string
-                
-                # Check if script contains wait_time (unique key they always use)
-                if 'wait_time' in script_content:
-                    print(f"DEBUG: Found script with 'wait_time' key")
-                    
-                    # Pattern 1: var ride_data = [{"wait_time": 45}]
-                    pattern1 = r'var\s+ride_data\s*=\s*(\[.*?\]);'
-                    matches1 = re.search(pattern1, script_content, re.DOTALL)
-                    if matches1:
-                        json_str = matches1.group(1)
-                        try:
-                            data = json.loads(json_str)
-                            print(f"DEBUG: Successfully parsed with pattern 1")
-                            return data
-                        except json.JSONDecodeError:
-                            print(f"DEBUG: Pattern 1 found but JSON decode failed")
-                    
-                    # Pattern 2: window.rideData = [{"wait_time": 45}]
-                    pattern2 = r'window\.rideData\s*=\s*(\[.*?\]);'
-                    matches2 = re.search(pattern2, script_content, re.DOTALL)
-                    if matches2:
-                        json_str = matches2.group(1)
-                        try:
-                            data = json.loads(json_str)
-                            print(f"DEBUG: Successfully parsed with pattern 2")
-                            return data
-                        except json.JSONDecodeError:
-                            print(f"DEBUG: Pattern 2 found but JSON decode failed")
-                    
-                    # Pattern 3: Look for series: or data: patterns
-                    pattern3 = r'(?:series|data)\s*:\s*(\[.*?\])'
-                    matches3 = re.search(pattern3, script_content, re.DOTALL)
-                    if matches3:
-                        json_str = matches3.group(1)
-                        try:
-                            data = json.loads(json_str)
-                            print(f"DEBUG: Successfully parsed with pattern 3")
-                            return data
-                        except json.JSONDecodeError:
-                            print(f"DEBUG: Pattern 3 found but JSON decode failed")
-                    
-                    # Pattern 4: Any JSON array with wait_time
-                    pattern4 = r'\[\s*\{[^}]*"wait_time"[^}]*\}'
-                    matches4 = re.search(pattern4, script_content, re.DOTALL)
-                    if matches4:
-                        # Extract the full JSON array
-                        start = script_content.find('[')
-                        end = script_content.rfind(']') + 1
-                        if start != -1 and end != 0:
-                            json_str = script_content[start:end]
-                            try:
-                                data = json.loads(json_str)
-                                print(f"DEBUG: Successfully parsed with pattern 4")
-                                return data
-                            except json.JSONDecodeError:
-                                print(f"DEBUG: Pattern 4 found but JSON decode failed")
-        
-        # Fallback: Look for any JSON arrays in script tags
-        for script in script_tags:
-            if script.string:
-                # Look for any JSON array pattern
-                json_matches = re.findall(r'\[.*?\]', script.string)
-                for match in json_matches:
-                    try:
-                        data = json.loads(match)
-                        if isinstance(data, list) and len(data) > 0:
-                            # Check if this looks like ride data
-                            first_item = data[0]
-                            if isinstance(first_item, dict) and 'wait_time' in str(first_item):
-                                print(f"DEBUG: Found ride data with fallback pattern")
-                                return data
-                    except json.JSONDecodeError:
-                        continue
-        
-        print("DEBUG: Found script with 'wait_time' but could not parse JSON")
-        return None
-        
-    except Exception as e:
-        print(f"Error extracting graph data: {e}")
-        return None
+    import json
+    import re
+    from bs4 import BeautifulSoup
+    
+    soup = BeautifulSoup(html_content, 'html.parser')
+    scripts = soup.find_all('script')
+    
+    for script in scripts:
+        if script.string and 'wait_time' in script.string:
+            # Option 1: Look for Highcharts "data": [...] pattern
+            # This regex finds the list associated with the "data" key
+            # We look for a list that contains "wait_time" to be sure it's the right one
+            match = re.search(r'data\s*:\s*(\[\s*\{.*?wait_time.*?\}\s*\])', script.string, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group(1))
+                    print(f"DEBUG: Successfully parsed with Highcharts pattern")
+                    return data
+                except json.JSONDecodeError:
+                    pass
+            
+            # Option 2: Fallback to the old variable pattern just in case
+            match = re.search(r'(?:var|const|let)\s+(?:ride_data|data)\s*=\s*(\[.*?\]);', script.string, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group(1))
+                    print(f"DEBUG: Successfully parsed with variable pattern")
+                    return data
+                except json.JSONDecodeError:
+                    pass
+    
+    return []
 
 def parse_ride_data(ride_data, ride_name, park_name, date):
     """
