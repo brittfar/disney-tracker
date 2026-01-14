@@ -1,4 +1,4 @@
-import requests
+import cloudscraper
 import time
 import argparse
 from datetime import datetime, timedelta
@@ -7,20 +7,6 @@ import json
 import re
 from database import get_session
 from schemas import WaitTime
-
-# Headers to bypass bot detection
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Accept-Encoding': 'gzip, deflate',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Cache-Control': 'max-age=0'
-}
 
 # Queue-Times.com Ride IDs for all Disney World parks
 DISNEY_RIDES = {
@@ -211,6 +197,9 @@ def backfill_historical_data(days=30, offset=0, start_year=2022):
     """
     print(f"Starting historical backfill for {days} days (offset: {offset}, start_year: {start_year})...")
     
+    # Initialize cloudscraper
+    scraper = cloudscraper.create_scraper()
+    
     session = get_session()
     total_records = 0
     
@@ -240,17 +229,16 @@ def backfill_historical_data(days=30, offset=0, start_year=2022):
                     
                     print(f"    Fetching {ride_name} data...")
                     
-                    # Make request with proper headers
-                    response = requests.get(url, headers=HEADERS, timeout=10)
+                    # Make request with cloudscraper (handles headers automatically)
+                    response = scraper.get(url)
                     
                     # Debug: Print response status
-                    print(f"      Response Status: {response.status_code}")
+                    print(f"      Response Status: {response.status_code if hasattr(response, 'status_code') else 'N/A'}")
                     
-                    if response.status_code != 200:
+                    # Check if we got a valid response
+                    if hasattr(response, 'status_code') and response.status_code != 200:
                         print(f"      ✗ HTTP Error: {response.status_code}")
                         continue
-                    
-                    response.raise_for_status()
                     
                     # Extract graph data from the page
                     ride_data = extract_graph_data(response.text)
@@ -282,16 +270,15 @@ def backfill_historical_data(days=30, offset=0, start_year=2022):
                     else:
                         # Enhanced debugging for failed data extraction
                         print(f"      ⚠ No graph data found")
-                        if response.status_code == 200:
-                            print(f"      WARNING: Page loaded but regex failed. Length: {len(response.text)}")
-                            # Print first 500 characters for debugging
-                            preview = response.text[:500].replace('\n', ' ').strip()
-                            print(f"      Page preview: {preview}...")
+                        if hasattr(response, 'text') and response.text:
+                            print(f"      DEBUG: Page Title: {response.text[:200]}")
+                        else:
+                            print(f"      DEBUG: No response text available")
                     
                     # Rate limiting - be polite to their server
                     time.sleep(1.0)
                     
-                except requests.exceptions.RequestException as e:
+                except Exception as e:
                     print(f"      ✗ Error fetching {ride_name}: {e}")
                     continue
                 except Exception as e:
