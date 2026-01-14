@@ -269,7 +269,11 @@ def backfill_historical_data(days=30, offset=0, start_year=2022):
                             print(f"      ⚠ No valid data found")
                     else:
                         # Enhanced debugging for failed data extraction
-                        print(f"      ⚠ No graph data found")
+                        print(f"      ⚠ No graph data found for {ride_name}")
+                        # Save the failed HTML to inspect later
+                        with open("debug_failed_page.html", "w", encoding="utf-8") as f:
+                            f.write(response.text)
+                        print("SAVED HTML DUMP: Run 'cat debug_failed_page.html' to inspect.")
                         if hasattr(response, 'text') and response.text:
                             print(f"      DEBUG: Page Title: {response.text[:200]}")
                         else:
