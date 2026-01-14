@@ -185,8 +185,16 @@ def backfill_historical_data(days=30, offset=0, start_year=2022):
     """
     print(f"Starting historical backfill for {days} days (offset: {offset}, start_year: {start_year})...")
     
-    # Initialize cloudscraper
-    scraper = cloudscraper.create_scraper()
+    # Initialize cloudscraper with browser configuration
+    scraper = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        }
+    )
+    # Add explicit headers to every request
+    scraper.headers.update({'Accept-Language': 'en-US,en;q=0.9'})
     
     session = get_session()
     total_records = 0
