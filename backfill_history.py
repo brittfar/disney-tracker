@@ -89,7 +89,7 @@ DISNEY_RIDES = {
 
 def extract_graph_data(html_content):
     """
-    Extract historical wait time data from the JavaScript graph data on the page.
+    Extract historical wait time data from Chartkick function calls.
     """
     import json
     import re
@@ -99,78 +99,66 @@ def extract_graph_data(html_content):
     scripts = soup.find_all('script')
     
     for script in scripts:
-        if script.string and 'wait_time' in script.string:
-            # Option 1: Look for Highcharts "data": [...] pattern
-            # This regex finds the list associated with the "data" key
-            # We look for a list that contains "wait_time" to be sure it's the right one
-            match = re.search(r'data\s*:\s*(\[\s*\{.*?wait_time.*?\}\s*\])', script.string, re.DOTALL)
+        if script.string and 'Chartkick' in script.string:
+            # Look for Chartkick LineChart pattern
+            match = re.search(r'new Chartkick\["LineChart"\]\("chart-1", (.*?)\);', script.string, re.DOTALL)
             if match:
                 try:
-                    data = json.loads(match.group(1))
-                    print(f"DEBUG: Successfully parsed with Highcharts pattern")
-                    return data
-                except json.JSONDecodeError:
-                    pass
-            
-            # Option 2: Fallback to the old variable pattern just in case
-            match = re.search(r'(?:var|const|let)\s+(?:ride_data|data)\s*=\s*(\[.*?\]);', script.string, re.DOTALL)
-            if match:
-                try:
-                    data = json.loads(match.group(1))
-                    print(f"DEBUG: Successfully parsed with variable pattern")
-                    return data
-                except json.JSONDecodeError:
+                    chart_data = json.loads(match.group(1))
+                    print(f"DEBUG: Successfully parsed Chartkick data")
+                    
+                    # Look for the object where name == "Reported by park"
+                    if isinstance(chart_data, list):
+                        for item in chart_data:
+                            if isinstance(item, dict) and item.get('name') == "Reported by park":
+                                data_list = item.get('data', [])
+                                print(f"DEBUG: Found 'Reported by park' data with {len(data_list)} entries")
+                                return data_list
+                    
+                    print(f"DEBUG: Chartkick data found but no 'Reported by park' entry")
+                    return []
+                    
+                except json.JSONDecodeError as e:
+                    print(f"DEBUG: Chartkick JSON decode failed: {e}")
                     pass
     
     return []
 
 def parse_ride_data(ride_data, ride_name, park_name, date):
     """
-    Parse the extracted ride data into wait time records.
+    Parse the extracted Chartkick ride data into wait time records.
+    Chartkick provides data as [["MM/DD/YY HH:MM:SS", "wait_time"], ...]
     """
     records = []
     
     try:
-        # Queue-Times.com typically provides data as [timestamp, wait_time] pairs
-        # or as objects with time and wait properties
         for entry in ride_data:
             if isinstance(entry, list) and len(entry) >= 2:
-                timestamp, wait_time = entry[0], entry[1]
-            elif isinstance(entry, dict):
-                timestamp = entry.get('time') or entry.get('timestamp')
-                wait_time = entry.get('wait') or entry.get('wait_time') or entry.get('waitTime')
-            else:
-                continue
-            
-            # Convert timestamp to datetime
-            try:
-                if isinstance(timestamp, (int, float)):
-                    # Unix timestamp
-                    dt = datetime.fromtimestamp(timestamp)
-                elif isinstance(timestamp, str):
-                    # Try to parse as ISO format
-                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                else:
+                timestamp_str, wait_time_str = entry[0], entry[1]
+                
+                # Parse Chartkick date format: MM/DD/YY HH:MM:SS
+                try:
+                    dt = datetime.strptime(timestamp_str, "%m/%d/%y %H:%M:%S")
+                except (ValueError, TypeError):
+                    print(f"DEBUG: Failed to parse timestamp: {timestamp_str}")
                     continue
-            except (ValueError, TypeError):
-                continue
-            
-            # Ensure wait_time is an integer
-            try:
-                wait_time = int(wait_time) if wait_time is not None else 0
-            except (ValueError, TypeError):
-                wait_time = 0
-            
-            records.append({
-                'ride_name': ride_name,
-                'park_name': park_name,
-                'wait_time': wait_time,
-                'is_open': wait_time > 0,  # Assume open if wait time > 0
-                'timestamp': dt
-            })
+                
+                # Ensure wait_time is an integer
+                try:
+                    wait_time = int(float(wait_time_str)) if wait_time_str is not None else 0
+                except (ValueError, TypeError):
+                    wait_time = 0
+                
+                records.append({
+                    'ride_name': ride_name,
+                    'park_name': park_name,
+                    'wait_time': wait_time,
+                    'is_open': wait_time > 0,  # Assume open if wait time > 0
+                    'timestamp': dt
+                })
     
     except Exception as e:
-        print(f"Error parsing ride data for {ride_name}: {e}")
+        print(f"Error parsing Chartkick ride data for {ride_name}: {e}")
     
     return records
 
