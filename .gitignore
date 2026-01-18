@@ -8,3 +8,4 @@ disney_model.joblib
 !disney_model.joblib.part*
 *.pyc
 .env
+# Ensure .streamlit is NOT ignored

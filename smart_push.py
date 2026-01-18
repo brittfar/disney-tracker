@@ -2,7 +2,7 @@ import os
 import subprocess
 import time
 
-PART_PREFIX = 'disney_complete.db.part'
+PART_PREFIX = 'disney_model.joblib.part'
 
 # 1. Undo last commit but keep files
 print("Running: git reset --soft HEAD~1")
@@ -22,18 +22,18 @@ if not parts:
 for i, part in enumerate(parts):
     print(f"\nUploading {part} ({i+1}/{len(parts)})...")
     subprocess.run(["git", "add", part])
-    subprocess.run(["git", "commit", "-m", f"Upload Part [{i+1}]"], check=True)
+    subprocess.run(["git", "commit", "-m", f"Upload Model Part [{i+1}]"], check=True)
     result = subprocess.run(["git", "push"], capture_output=True, text=True)
     print(result.stdout)
     if result.returncode != 0:
         print(result.stderr)
         print("❌ Push failed. Stopping script.")
         exit(1)
-    print(f"Success: Part [{i+1}] uploaded")
+    print(f"Success: Model Part [{i+1}] uploaded")
     time.sleep(10)
 
-print("\nAdding and pushing remaining files...")
-subprocess.run(["git", "add", "."])
-subprocess.run(["git", "commit", "-m", "Uploading remaining project files"], check=False)
+print("\nAdding and pushing glue_db.py and .gitignore...")
+subprocess.run(["git", "add", "glue_db.py", ".gitignore"])
+subprocess.run(["git", "commit", "-m", "Upload glue_db.py and .gitignore after model parts"], check=False)
 subprocess.run(["git", "push"], check=False)
-print("✅ All parts and remaining files pushed.")
+print("✅ All model parts and glue/config files pushed.")
