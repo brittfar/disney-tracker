@@ -1,0 +1,9 @@
+[theme]
+primaryColor = "#0072CE"        # Disney Blue
+backgroundColor = "#0E1117"     # Dark background (modern app feel)
+secondaryBackgroundColor = "#262730" # Sidebar background
+textColor = "#FAFAFA"           # White text
+font = "sans serif"
+
+[server]
+headless = true

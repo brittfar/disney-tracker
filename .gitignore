@@ -1,5 +1,9 @@
 venv/
 __pycache__/
+disney_complete.db
 *.db
+!disney_complete.db.part*
+final_training_data.csv
+disney_model.joblib
 *.pyc
 .env

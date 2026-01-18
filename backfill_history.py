@@ -2,148 +2,225 @@ import cloudscraper
 import time
 import argparse
 from datetime import datetime, timedelta
-from bs4 import BeautifulSoup
 import json
 import re
+from bs4 import BeautifulSoup
 from database import get_session
 from schemas import WaitTime
 
-# Queue-Times.com Ride IDs for all Disney World parks
+# Queue-Times.com Ride IDs
 DISNEY_RIDES = {
     "Magic Kingdom Park": {
-        "Seven Dwarfs Mine Train": 136,
-        "Space Mountain": 137,
-        "Big Thunder Mountain Railroad": 138,
-        "Splash Mountain": 139,
-        "Pirates of the Caribbean": 140,
-        "Haunted Mansion": 141,
-        "Jungle Cruise": 142,
-        "It's a Small World": 143,
-        "Peter Pan's Flight": 144,
-        "Mad Tea Party": 145,
-        "Dumbo the Flying Elephant": 146,
-        "Buzz Lightyear's Space Ranger Spin": 147,
-        "Astro Orbiter": 148,
-        "Carousel of Progress": 149,
-        "Hall of Presidents": 150,
-        "Monsters, Inc. Laugh Floor": 151,
-        "Tomorrowland Speedway": 152,
-        "Walt Disney World Railroad": 153,
-        "Swiss Family Treehouse": 154,
-        "Country Bear Jamboree": 155,
-        "Liberty Square Riverboat": 156,
-        "Frontierland Shootin' Arcade": 157,
-        "The Barnstormer": 158,
-        "Prince Charming Regal Carrousel": 159,
-        "Mickey's PhilharMagic": 160,
-        "Enchanted Tales with Belle": 161,
-        "Under the Sea ~ Journey of the Little Mermaid": 162,
-        "The Many Adventures of Winnie the Pooh": 163,
-        "Goofy's Barnstormer": 164,
-        "The Magic Carpets of Aladdin": 165,
-        "Tomorrowland Transit Authority PeopleMover": 167,
+        "Seven Dwarfs Mine Train": 129,
+        "Space Mountain": 138,
+        "Big Thunder Mountain Railroad": 130,
+        "Tiana's Bayou Adventure": 13630, 
+        "Pirates of the Caribbean": 137,
+        "Haunted Mansion": 140,
+        "Jungle Cruise": 134,
+        "it's a small world": 133,
+        "Peter Pan's Flight": 136,
+        "Mad Tea Party": 135,
+        "Dumbo the Flying Elephant": 132,
+        "Buzz Lightyear's Space Ranger Spin": 131,
+        "Astro Orbiter": 248,
+        "Walt Disney's Carousel of Progress": 457,
+        "Tomorrowland Speedway": 143,
+        "The Barnstormer": 126,
+        "Mickey's PhilharMagic": 171,
+        "Enchanted Tales with Belle": 128,
+        "Under the Sea - Journey of The Little Mermaid": 127,
+        "The Many Adventures of Winnie the Pooh": 142,
+        "The Magic Carpets of Aladdin": 141,
+        "Tomorrowland Transit Authority PeopleMover": 1190,
+        "TRON Lightcycle / Run": 11527,
+        "Prince Charming Regal Carrousel": 161,
+        "The Hall of Presidents": 356,
+        "Swiss Family Treehouse": 355,
+        "Country Bear Musical Jamboree": 1214,
+        "Walt Disney's Enchanted Tiki Room": 334,
+        "A Pirate's Adventure ~ Treasures of the Seven Seas": 1184,
+        "Casey Jr. Splash 'N' Soak Station": 13764,
+        "Walt Disney World Railroad - Fantasyland": 1181,
+        "Walt Disney World Railroad - Main Street, U.S.A.": 1189,
+        "Monsters Inc. Laugh Floor": 125,
     },
     "EPCOT": {
-        "Test Track": 201,
-        "Soarin' Around the World": 202,
-        "Mission: SPACE": 203,
-        "Spaceship Earth": 204,
-        "The Seas with Nemo & Friends": 205,
-        "Turtle Talk with Crush": 206,
-        "Living with the Land": 207,
-        "Journey into Imagination with Figment": 208,
-        "Gran Fiesta Tour Starring The Three Caballeros": 209,
-        "Frozen Ever After": 210,
-        "Remy's Ratatouille Adventure": 211,
-        "Guardians of the Galaxy: Cosmic Rewind": 212,
+        "Spaceship Earth": 159,
+        "Soarin' Around the World": 151,
+        "Living with the Land": 156,
+        "Mission: SPACE": 158,
+        "Test Track": 160,
+        "The Seas with Nemo & Friends": 153,
+        "Frozen Ever After": 2679,
+        "Journey Into Imagination With Figment": 155,
+        "Gran Fiesta Tour Starring The Three Caballeros": 466,
+        "Remy's Ratatouille Adventure": 10914,
+        "Guardians of the Galaxy: Cosmic Rewind": 10916,
+        "Turtle Talk With Crush": 152,
+        "Disney and Pixar Short Film Festival": 2495,
+        "Journey of Water, Inspired by Moana": 12387,
+        "Canada Far and Wide in Circle-Vision 360": 829,
+        "Awesome Planet": 7323,
     },
     "Disney's Hollywood Studios": {
-        "Rock 'n' Roller Coaster Starring Aerosmith": 301,
-        "The Twilight Zone Tower of Terror": 302,
-        "Slinky Dog Dash": 303,
-        "Millennium Falcon: Smugglers Run": 304,
-        "Star Wars: Rise of the Resistance": 305,
-        "Toy Story Mania!": 306,
-        "Mickey & Minnie's Runaway Railway": 307,
-        "The Great Movie Ride": 308,
-        "Indiana Jones Epic Stunt Spectacular": 309,
-        "Beauty and the Beast Live on Stage": 310,
-        "Fantasmic!": 311,
-        "Voyage of the Little Mermaid": 312,
+        "The Twilight Zone Tower of Terror": 123,
+        "Rock 'n' Roller Coaster Starring Aerosmith": 119,
+        "Toy Story Mania!": 117,
+        "Star Tours – The Adventures Continue": 120,
+        "Slinky Dog Dash": 5476,
+        "Alien Swirling Saucers": 5477,
+        "Millennium Falcon: Smugglers Run": 6368,
+        "Star Wars: Rise of the Resistance": 6369,
+        "Mickey & Minnie's Runaway Railway": 6361,
+        "Indiana Jones™ Epic Stunt Spectacular!": 6702,
+        "For the First Time in Forever: A Frozen Sing-Along Celebration": 1174,
+        "Beauty and the Beast – Live on Stage": 1176,
+        "Walt Disney Presents": 5145,
+        "Vacation Fun - An Original Animated Short with Mickey & Minnie": 7333,
+        "The Little Mermaid – A Musical Adventure – New!": 14859,
     },
     "Disney's Animal Kingdom Theme Park": {
-        "Avatar Flight of Passage": 401,
-        "Na'vi River Journey": 402,
-        "Expedition Everest": 403,
-        "Kilimanjaro Safaris": 404,
-        "Dinosaur": 405,
-        "Primeval Whirl": 406,
+        "Avatar Flight of Passage": 4439,
+        "Na'vi River Journey": 4438,
+        "Expedition Everest - Legend of the Forbidden Mountain": 110,
+        "Kilimanjaro Safaris": 113,
+        "DINOSAUR": 111,
+        "Kali River Rapids": 112,
         "TriceraTop Spin": 407,
-        "Kali River Rapids": 408,
         "It's Tough to Be a Bug!": 409,
-        "Festival of the Lion King": 410,
-        "Finding Nemo: The Musical": 411,
-        "UP! A Great Bird Adventure": 412,
+        "Festival of the Lion King": 657,
+        "Feathered Friends in Flight!": 10921,
+        "Finding Nemo: The Big Blue... and Beyond!": 10920,
+        "Gorilla Falls Exploration Trail": 651,
+        "Wildlife Express Train": 655,
+        "The Animation Experience at Conservation Station": 6680,
     }
 }
 
+def login(scraper, email, password):
+    """
+    Logs into queue-times.com to establish a session.
+    """
+    print(f"🔑 Logging in as {email}...")
+    login_url = "https://queue-times.com/users/sign_in"
+    
+    try:
+        # 1. Get the login page to grab CSRF token
+        response = scraper.get(login_url)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Check if already logged in
+        if "Logout" in response.text:
+            print("   ✅ Already logged in!")
+            return True
+            
+        token_input = soup.find('input', {'name': 'authenticity_token'})
+        if not token_input:
+            print("   ❌ Failed to find login CSRF token.")
+            return False
+            
+        # 2. Post credentials
+        payload = {
+            'user[email]': email,
+            'user[password]': password,
+            'authenticity_token': token_input['value'],
+            'user[remember_me]': '1',
+            'commit': 'Log in'
+        }
+        
+        response = scraper.post(login_url, data=payload)
+        
+        # 3. Verify success
+        if "Logout" in response.text or "Signed in successfully" in response.text:
+            print("   ✅ Login successful!")
+            return True
+        else:
+            print("   ❌ Login failed. Check credentials.")
+            return False
+            
+    except Exception as e:
+        print(f"   ❌ Login error: {e}")
+        return False
+
 def extract_graph_data(html_content):
     """
-    Extract historical wait time data from Chartkick function calls.
+    Extracts data using a multi-strategy approach.
+    Strategy 1: Robust Regex (Handles newlines and variations)
+    Strategy 2: Substring Search & Bracket Counting (Failsafe)
     """
-    import json
-    import re
-    from bs4 import BeautifulSoup
     
-    soup = BeautifulSoup(html_content, 'html.parser')
-    scripts = soup.find_all('script')
-    
-    for script in scripts:
-        if script.string and 'Chartkick' in script.string:
-            # Look for Chartkick LineChart pattern
-            match = re.search(r'new Chartkick\["LineChart"\]\("chart-1", (.*?)\);', script.string, re.DOTALL)
-            if match:
-                try:
-                    chart_data = json.loads(match.group(1))
-                    print(f"DEBUG: Successfully parsed Chartkick data")
+    # Quick check: Is the data even there?
+    if "Reported by park" not in html_content:
+        return []
+
+    # --- STRATEGY 1: Aggressive Regex ---
+    # Matches: new Chartkick["Any"]("id", [DATA], {options});
+    # Uses re.DOTALL to match across newlines
+    pattern = r'new Chartkick\[".*?"\]\(".*?", (\[.*?\]), \{'
+    match = re.search(pattern, html_content, re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group(1))
+            for series in data:
+                if series.get('name') == "Reported by park":
+                    return series.get('data', [])
+        except:
+            pass # Fall through to Strategy 2
+
+    # --- STRATEGY 2: "Search & Destroy" Parser ---
+    # This ignores the Chartkick function and just grabs the data array
+    try:
+        # 1. Find the anchor text
+        idx = html_content.find('Reported by park')
+        if idx != -1:
+            # 2. Find the "data": tag following it
+            data_label_idx = html_content.find('"data":', idx)
+            if data_label_idx != -1:
+                # 3. Find the opening bracket [
+                start_bracket = html_content.find('[', data_label_idx)
+                if start_bracket != -1:
+                    # 4. Count brackets to find the matching closing bracket ]
+                    # This handles nested lists like [[time, val], [time, val]]
+                    balance = 0
+                    end_bracket = start_bracket
+                    for i, char in enumerate(html_content[start_bracket:]):
+                        if char == '[':
+                            balance += 1
+                        elif char == ']':
+                            balance -= 1
+                        
+                        if balance == 0:
+                            end_bracket = start_bracket + i + 1
+                            break
                     
-                    # Look for the object where name == "Reported by park"
-                    if isinstance(chart_data, list):
-                        for item in chart_data:
-                            if isinstance(item, dict) and item.get('name') == "Reported by park":
-                                data_list = item.get('data', [])
-                                print(f"DEBUG: Found 'Reported by park' data with {len(data_list)} entries")
-                                return data_list
-                    
-                    print(f"DEBUG: Chartkick data found but no 'Reported by park' entry")
-                    return []
-                    
-                except json.JSONDecodeError as e:
-                    print(f"DEBUG: Chartkick JSON decode failed: {e}")
-                    pass
-    
+                    if end_bracket > start_bracket:
+                        json_str = html_content[start_bracket:end_bracket]
+                        return json.loads(json_str)
+    except Exception:
+        pass
+            
     return []
 
 def parse_ride_data(ride_data, ride_name, park_name, date):
-    """
-    Parse the extracted Chartkick ride data into wait time records.
-    Chartkick provides data as [["MM/DD/YY HH:MM:SS", "wait_time"], ...]
-    """
     records = []
     
+    # Validation: Ensure we aren't getting "Hourly Average" (integers 0..23)
+    # The summary page (wrong data) uses integers for x-axis.
+    # The daily page (correct data) uses Date Strings.
+    if ride_data and len(ride_data) > 0 and isinstance(ride_data[0][0], int):
+        return []
+
     try:
         for entry in ride_data:
             if isinstance(entry, list) and len(entry) >= 2:
                 timestamp_str, wait_time_str = entry[0], entry[1]
                 
-                # Parse Chartkick date format: MM/DD/YY HH:MM:SS
                 try:
                     dt = datetime.strptime(timestamp_str, "%m/%d/%y %H:%M:%S")
                 except (ValueError, TypeError):
-                    print(f"DEBUG: Failed to parse timestamp: {timestamp_str}")
                     continue
                 
-                # Ensure wait_time is an integer
                 try:
                     wait_time = int(float(wait_time_str)) if wait_time_str is not None else 0
                 except (ValueError, TypeError):
@@ -153,151 +230,126 @@ def parse_ride_data(ride_data, ride_name, park_name, date):
                     'ride_name': ride_name,
                     'park_name': park_name,
                     'wait_time': wait_time,
-                    'is_open': wait_time > 0,  # Assume open if wait time > 0
+                    'is_open': wait_time > 0,
                     'timestamp': dt
                 })
-    
     except Exception as e:
         print(f"Error parsing Chartkick ride data for {ride_name}: {e}")
-    
     return records
 
-def backfill_historical_data(days=30, offset=0, start_year=2022):
-    """
-    Backfill historical wait time data for all Disney World parks.
-    
-    Args:
-        days (int): Number of days to process
-        offset (int): Days offset from today (0 = today, 1 = yesterday, etc.)
-        start_year (int): Starting year for deep backfilling
-    """
+def backfill_historical_data(days=30, offset=0, start_year=2022, email=None, password=None):
     print(f"Starting historical backfill for {days} days (offset: {offset}, start_year: {start_year})...")
     
-    # Initialize cloudscraper with browser configuration
     scraper = cloudscraper.create_scraper(
-        browser={
-            'browser': 'chrome',
-            'platform': 'windows',
-            'desktop': True
-        }
+        browser={'browser': 'chrome', 'platform': 'windows', 'desktop': True}
     )
-    # Add explicit headers to every request
-    scraper.headers.update({'Accept-Language': 'en-US,en;q=0.9'})
+    scraper.headers.update({
+        'Accept-Language': 'en-US,en;q=0.9',
+    })
     
+    # Login
+    if email and password:
+        if not login(scraper, email, password):
+            print("⛔ Aborting backfill due to login failure.")
+            return
+    else:
+        print("⚠ WARNING: No credentials provided.")
+
     session = get_session()
     total_records = 0
     
-    # Calculate date range
     end_date = datetime.now() - timedelta(days=offset)
     start_date = end_date - timedelta(days=days)
     
-    # Ensure we don't go before start_year
     if start_date.year < start_year:
         start_date = datetime(start_year, 1, 1)
-        print(f"Adjusted start date to {start_date.strftime('%Y-%m-%d')} (start_year constraint)")
     
     current_date = start_date
     while current_date <= end_date:
         date_str = current_date.strftime('%Y-%m-%d')
+        year_str = current_date.strftime('%Y')
         print(f"\nProcessing date: {date_str}")
         
-        # Process all parks
         for park_name, rides in DISNEY_RIDES.items():
             print(f"  Processing {park_name}...")
             park_records = 0
             
             for ride_name, ride_id in rides.items():
                 try:
-                    # Construct URL for historical data
-                    url = f"https://queue-times.com/en-US/parks/{get_park_id(park_name)}/rides/{ride_id}?given_date={date_str}"
+                    park_id = get_park_id(park_name)
                     
-                    print(f"    Fetching {ride_name} data...")
+                    # Direct Link to Historical Year Page
+                    url = f"https://queue-times.com/parks/{park_id}/rides/{ride_id}/{year_str}?given_date={date_str}"
                     
-                    # Make request with cloudscraper (handles headers automatically)
+                    print(f"    Fetching {ride_name}...")
                     response = scraper.get(url)
                     
-                    # Debug: Print response status
-                    print(f"      Response Status: {response.status_code if hasattr(response, 'status_code') else 'N/A'}")
-                    
-                    # Check if we got a valid response
-                    if hasattr(response, 'status_code') and response.status_code != 200:
+                    if response.status_code != 200:
                         print(f"      ✗ HTTP Error: {response.status_code}")
                         continue
-                    
-                    # Extract graph data from the page
+
+                    if "Please log in" in response.text and "Reported by park" not in response.text:
+                         print(f"      ⛔ BLOCKED: Session invalid.")
+                         continue
+
                     ride_data = extract_graph_data(response.text)
                     
                     if ride_data:
-                        # Parse the data into records
                         records = parse_ride_data(ride_data, ride_name, park_name, current_date)
-                        
                         if records:
-                            # Bulk insert records
                             for record in records:
                                 wait_time_record = WaitTime(
                                     ride_name=record['ride_name'],
                                     park_name=record['park_name'],
                                     wait_time=record['wait_time'],
-                                    # Convert boolean is_open to String status
                                     status='Operating' if record['is_open'] else 'Closed',
-                                    # Map timestamp to last_updated
                                     last_updated=record['timestamp']
                                 )
                                 session.add(wait_time_record)
-                            
                             session.commit()
                             total_records += len(records)
                             park_records += len(records)
                             print(f"      ✓ Added {len(records)} records")
                         else:
-                            print(f"      ⚠ No valid data found")
+                            print(f"      ⚠ Data found but parsed 0 records (Check Date)")
                     else:
-                        # Enhanced debugging for failed data extraction
-                        print(f"      ⚠ No graph data found for {ride_name}")
-                        # Save the failed HTML to inspect later
-                        with open("debug_failed_page.html", "w", encoding="utf-8") as f:
-                            f.write(response.text)
-                        print("SAVED HTML DUMP: Run 'cat debug_failed_page.html' to inspect.")
-                        if hasattr(response, 'text') and response.text:
-                            print(f"      DEBUG: Page Title: {response.text[:200]}")
-                        else:
-                            print(f"      DEBUG: No response text available")
+                        print(f"      ⚠ No graph data found")
                     
-                    # Rate limiting - be polite to their server
                     time.sleep(1.0)
                     
                 except Exception as e:
                     print(f"      ✗ Error fetching {ride_name}: {e}")
                     continue
-                except Exception as e:
-                    print(f"      ✗ Unexpected error for {ride_name}: {e}")
-                    continue
             
             print(f"  {park_name} total: {park_records} records")
-        
-        # Move to next day
         current_date += timedelta(days=1)
     
     session.close()
     print(f"\nBackfill complete! Total records added: {total_records}")
 
 def get_park_id(park_name):
-    """Get Queue-Times.com park ID from park name."""
     park_ids = {
         "Magic Kingdom Park": 6,
         "EPCOT": 5,
         "Disney's Hollywood Studios": 7,
         "Disney's Animal Kingdom Theme Park": 8
     }
-    return park_ids.get(park_name, 6)  # Default to Magic Kingdom
+    return park_ids.get(park_name, 6)
 
 if __name__ == "__main__":
+    # --- FIX: Ensure database tables exist before starting ---
+    from database import engine, Base
+    print("🔧 Checking database structure...")
+    Base.metadata.create_all(bind=engine)
+    print("✅ Database tables verified.")
+    # ---------------------------------------------------------
+
     parser = argparse.ArgumentParser(description='Backfill historical Disney World wait time data')
     parser.add_argument('--days', type=int, default=30, help='Number of days to backfill (default: 30)')
     parser.add_argument('--offset', type=int, default=0, help='Days offset from today (default: 0)')
     parser.add_argument('--start-year', type=int, default=2022, help='Starting year for deep backfilling (default: 2022)')
+    parser.add_argument('--email', type=str)
+    parser.add_argument('--password', type=str)
     
     args = parser.parse_args()
-    
-    # Run backfill with specified parameters
-    backfill_historical_data(days=args.days, offset=args.offset, start_year=args.start_year)
+    backfill_historical_data(days=args.days, offset=args.offset, start_year=args.start_year, email=args.email, password=args.password)
