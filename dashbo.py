@@ -7,6 +7,14 @@ if not os.path.exists("disney_complete.db") or not os.path.exists("disney_model.
     glue_db.reconstruct_all()
     print("✅ Reconstruction complete. Launching app...")
 
+import os
+import glue_db
+
+# Self-Healing: Build DB and Model if missing
+if not os.path.exists("disney_complete.db") or not os.path.exists("disney_model.joblib"):
+    print("🧩 Critical files missing. Re-running glue script...")
+    glue_db.reconstruct_all()
+
 import streamlit as st
 import os
 import glob
