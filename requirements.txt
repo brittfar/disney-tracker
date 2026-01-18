@@ -8,3 +8,4 @@ beautifulsoup4
 psycopg2-binary
 openpyxl
 lxml
+schedule
