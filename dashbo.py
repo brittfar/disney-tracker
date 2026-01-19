@@ -1,9 +1,9 @@
 import os
 import glue_db
 
-# Self-Healing: Check if DB/Model exists, otherwise build them
-if not os.path.exists("disney_complete.db") or not os.path.exists("disney_model.joblib"):
-    print("🧩 Files missing. Running emergency reconstruction...")
+# Self-Healing: Only check for DB (not model)
+if not os.path.exists("disney_complete.db"):
+    print("🧩 disney_complete.db missing. Running emergency reconstruction...")
     glue_db.reconstruct_all()
 import streamlit as st
 import pandas as pd
@@ -86,10 +86,8 @@ PARK_THEMES = {
 
 @st.cache_resource
 def load_ai():
-    try:
-        return joblib.load(MODEL_FILE), joblib.load(ENCODER_FILE)
-    except:
-        return None, None
+    print("⚠️ AI Model disabled to save RAM.")
+    return None, None
 
 model, encoder = load_ai()
 
