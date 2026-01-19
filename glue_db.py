@@ -1,34 +1,32 @@
+import glob
 import os
 
-def glue_file(output_file, part_prefix):
-    parts = [f for f in os.listdir('.') if f.startswith(part_prefix)]
-    parts.sort(key=lambda x: int(x.split('part')[-1]))
-    if not parts:
-        print(f"No part files found for {output_file}.")
-        return False
-    print(f"[GLUE] Found {len(parts)} parts for {output_file}. Stitching...")
-    with open(output_file, 'wb') as outfile:
-        for part in parts:
-            with open(part, 'rb') as pf:
-                chunk = pf.read()
-                outfile.write(chunk)
-            print(f"[GLUE] Added {part} ({len(chunk) / (1024 * 1024):.2f} MB)")
-    print(f"[GLUE] Done! Created {output_file}.")
-    return True
-
 def reconstruct_all():
-    print("[GLUE] Running reconstruct_all()...")
-    if not os.path.exists('disney_complete.db'):
-        print("[GLUE] disney_complete.db missing. Attempting to reconstruct...")
-        glue_file('disney_complete.db', 'disney_complete.db.part')
+    print("🧩 STARTING EMERGENCY RECONSTRUCTION...")
+    
+    # 1. Rebuild Database
+    db_parts = sorted(glob.glob("disney_complete.db.part*"))
+    if db_parts:
+        print(f"   Found {len(db_parts)} database chunks. Stitching...")
+        with open("disney_complete.db", "wb") as dest:
+            for part in db_parts:
+                with open(part, "rb") as source:
+                    dest.write(source.read())
+        print("   ✅ Database Rebuilt!")
     else:
-        print("[GLUE] disney_complete.db already exists.")
-    if not os.path.exists('disney_model.joblib'):
-        print("[GLUE] disney_model.joblib missing. Attempting to reconstruct...")
-        glue_file('disney_model.joblib', 'disney_model.joblib.part')
+        print("   ⚠️ No database chunks found!")
+
+    # 2. Rebuild Model
+    model_parts = sorted(glob.glob("disney_model.joblib.part*"))
+    if model_parts:
+        print(f"   Found {len(model_parts)} model chunks. Stitching...")
+        with open("disney_model.joblib", "wb") as dest:
+            for part in model_parts:
+                with open(part, "rb") as source:
+                    dest.write(source.read())
+        print("   ✅ Model Rebuilt!")
     else:
-        print("[GLUE] disney_model.joblib already exists.")
-    print("[GLUE] Reconstruction complete.")
+        print("   ⚠️ No model chunks found!")
 
 if __name__ == "__main__":
     reconstruct_all()
