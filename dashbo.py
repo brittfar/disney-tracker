@@ -4,13 +4,10 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import plotly.graph_objects as go
-import joblib
 import datetime
-import holidays
 
-# --- 1. SELF-HEALING ---
+# --- 1. SELF-HEALING (Database Reconstruction) ---
 if not os.path.exists("disney_complete.db"):
-    print("rebuilding database...")
     db_parts = sorted(glob.glob("disney_complete.db.part*"))
     if db_parts:
         with open("disney_complete.db", "wb") as dest:
@@ -18,135 +15,199 @@ if not os.path.exists("disney_complete.db"):
                 with open(part, "rb") as source:
                     dest.write(source.read())
 
-# --- 2. CONFIG ---
-st.set_page_config(
-    page_title="Disney",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+# --- 2. CONFIG & STYLING ---
+st.set_page_config(page_title="Disney Planner", layout="centered", initial_sidebar_state="collapsed")
 
-# --- 3. CSS Styling (Simplified) ---
 st.markdown("""
     <style>
-        /* Hide Top Bar & Footer for App Feel */
-        #MainMenu {visibility: hidden;}
-        footer {visibility: hidden;}
-        header {visibility: hidden;}
+        /* Clean Mobile Look */
+        #MainMenu, footer, header {visibility: hidden;}
         [data-testid="stSidebar"] {display: none;}
-
-        /* App Background - Clean Off-White */
-        .stApp {
-            background-color: #F5F7FA;
-        }
-
-        /* Make Tabs look like App Navigation */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 10px;
-            background-color: white;
-            padding: 10px 10px 0px 10px;
-            border-radius: 15px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        .stApp {background-color: #F5F7FA;}
+        .block-container {padding-top: 1rem; padding-bottom: 2rem;}
+        
+        /* Cards */
+        .plan-card {
+            background-color: white; border-radius: 15px; padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 15px;
+            text-align: center; border: 1px solid #eee;
         }
         
-        .stTabs [data-baseweb="tab"] {
-            height: 50px;
-            white-space: pre-wrap;
-            border-radius: 5px;
-        }
-
-        /* Remove extra padding at top */
-        .block-container {
-            padding-top: 1rem;
-        }
+        /* Verdict Text */
+        .verdict-go {color: #2ECC71; font-weight: bold; font-size: 1.5rem;}
+        .verdict-wait {color: #E74C3C; font-weight: bold; font-size: 1.5rem;}
+        
+        /* Park Selector Styling */
+        div[role="radiogroup"] {justify-content: center;}
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. DATA LOGIC ---
 DB_NAME = 'disney_complete.db'
-MODEL_FILE = 'disney_model.joblib'
-ENCODER_FILE = 'ride_encoder.joblib'
 
-@st.cache_resource
-def load_ai():
-    try:
-        return joblib.load(MODEL_FILE), joblib.load(ENCODER_FILE)
-    except:
-        return None, None
-
-model, encoder = load_ai()
-
-def load_ride_data(ride, days):
+# --- 3. DATA FUNCTIONS (The "Lightweight AI") ---
+def get_live_wait(ride):
+    """Get the very latest wait time"""
     conn = sqlite3.connect(DB_NAME)
-    query = f"SELECT last_updated, wait_time FROM wait_times WHERE ride_name = ? AND last_updated > date('now', '-{days} days') ORDER BY last_updated ASC"
-    df = pd.read_sql_query(query, conn, params=(ride,))
+    # Get last record
+    row = pd.read_sql_query(f"SELECT wait_time FROM wait_times WHERE ride_name = ? ORDER BY last_updated DESC LIMIT 1", conn, params=(ride,))
+    conn.close()
+    return row.iloc[0]['wait_time'] if not row.empty else None
+
+def get_typical_day_curve(ride):
+    """
+    Get average wait time per hour for the current day of week.
+    This replaces the 'Heavy AI' with 'Smart Stats'.
+    """
+    day_of_week = datetime.datetime.today().weekday() # 0=Monday, 6=Sunday
+    conn = sqlite3.connect(DB_NAME)
+    
+    # SQL Magic: Average wait times grouped by hour for this specific day of week
+    # We ignore data older than 90 days to keep it fresh
+    query = f"""
+        SELECT strftime('%H', last_updated) as hour, AVG(wait_time) as avg_wait
+        FROM wait_times
+        WHERE ride_name = ? 
+        AND cast(strftime('%w', last_updated) as int) = ?
+        AND last_updated > date('now', '-90 days')
+        GROUP BY hour
+        ORDER BY hour
+    """
+    df = pd.read_sql_query(query, conn, params=(ride, day_of_week))
     conn.close()
     return df
 
-def get_rides_for_park(park_name):
-    # Hardcoded directory matches your DB names
-    PARK_DIRECTORY = {
-        "Magic Kingdom": ["Seven Dwarfs Mine Train", "Space Mountain", "Big Thunder Mountain Railroad", "Haunted Mansion", "Pirates of the Caribbean", "Jungle Cruise", "Peter Pan's Flight", "TRON Lightcycle / Run", "Tiana's Bayou Adventure"],
-        "Epcot": ["Guardians of the Galaxy: Cosmic Rewind", "Remy's Ratatouille Adventure", "Frozen Ever After", "Test Track", "Soarin' Around the World", "Spaceship Earth"],
-        "Hollywood Studios": ["Star Wars: Rise of the Resistance", "Slinky Dog Dash", "The Twilight Zone Tower of Terror", "Rock 'n' Roller Coaster Starring Aerosmith", "Mickey & Minnie's Runaway Railway", "Millennium Falcon: Smugglers Run", "Toy Story Mania!"],
-        "Animal Kingdom": ["Avatar Flight of Passage", "Na'vi River Journey", "Expedition Everest - Legend of the Forbidden Mountain", "Kilimanjaro Safaris", "DINOSAUR"]
+def get_best_park_today():
+    """Rank parks by their current average wait time"""
+    conn = sqlite3.connect(DB_NAME)
+    # Get average wait of all rides in the last 2 hours per park? 
+    # Since we don't store 'park' column explicitly in DB (we mapped it in python), 
+    # we have to query ALL rides and map them.
+    
+    # 1. Get latest wait for EVERY ride
+    query = """
+        SELECT ride_name, wait_time 
+        FROM wait_times 
+        WHERE last_updated > datetime('now', '-2 hours')
+        GROUP BY ride_name 
+        ORDER BY last_updated DESC
+    """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    
+    # 2. Map to Parks
+    PARK_MAP = {
+        "Magic Kingdom": ["Seven Dwarfs", "Space Mountain", "Big Thunder", "Haunted Mansion", "Pirates", "Jungle Cruise", "Peter Pan", "TRON", "Tiana"],
+        "Epcot": ["Guardians", "Remy", "Frozen", "Test Track", "Soarin", "Spaceship Earth"],
+        "Hollywood Studios": ["Rise of the Resistance", "Slinky Dog", "Tower of Terror", "Rock 'n' Roller", "Runaway Railway", "Smugglers Run"],
+        "Animal Kingdom": ["Flight of Passage", "Na'vi", "Expedition Everest", "Kilimanjaro", "DINOSAUR"]
     }
-    return PARK_DIRECTORY.get(park_name, [])
-
-# --- 5. APP UI ---
-
-# Create Tabs for Parks (The "App Navigation")
-park_tabs = st.tabs(["MK", "EPCOT", "HS", "AK"])
-park_names = ["Magic Kingdom", "Epcot", "Hollywood Studios", "Animal Kingdom"]
-
-# Loop to create content for each tab
-for tab, park_name in zip(park_tabs, park_names):
-    with tab:
-        # 1. RIDE SELECTOR
-        my_rides = get_rides_for_park(park_name)
-        selected_ride = st.selectbox(f"Ride at {park_name}", my_rides, label_visibility="collapsed")
-
-        if selected_ride:
-            data = load_ride_data(selected_ride, 30)
+    
+    park_scores = {}
+    for park, keywords in PARK_MAP.items():
+        # Fuzzy match ride names
+        park_rides = df[df['ride_name'].str.contains('|'.join(keywords), case=False, regex=True)]
+        if not park_rides.empty:
+            avg_wait = park_rides['wait_time'].mean()
+            park_scores[park] = int(avg_wait)
+        else:
+            park_scores[park] = 0
             
-            if not data.empty:
-                current_wait = data.iloc[-1]['wait_time']
-                avg_wait = int(data['wait_time'].mean())
+    return pd.DataFrame(list(park_scores.items()), columns=['Park', 'AvgWait']).sort_values('AvgWait')
 
-                # 2. METRICS CARD
-                with st.container(border=True):
-                    c1, c2 = st.columns(2)
-                    c1.metric("Wait Now", f"{current_wait}m")
-                    c2.metric("Avg (30d)", f"{avg_wait}m")
+# --- 4. APP INTERFACE ---
 
-                # 3. CHART CARD
-                with st.container(border=True):
-                    st.caption(f"History: {selected_ride}")
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(
-                        x=pd.to_datetime(data['last_updated']), 
-                        y=data['wait_time'], 
-                        mode='lines', 
-                        line=dict(color='#2196F3', width=2),
-                        fill='tozeroy',
-                        fillcolor='rgba(33, 150, 243, 0.1)'
-                    ))
-                    fig.update_layout(height=200, margin=dict(l=0,r=0,t=0,b=0), xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor='#eee'), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+# A. PARK SELECTOR (Cleaner Radio)
+parks = ["Magic Kingdom", "Epcot", "Hollywood Studios", "Animal Kingdom"]
+selected_park = st.radio("Park", parks, horizontal=True, label_visibility="collapsed")
 
-                # 4. PREDICTION CARD
-                with st.container(border=True):
-                    if model:
-                        c_time, c_btn = st.columns([2,1])
-                        p_time = c_time.time_input("Plan Time", datetime.time(12,0), label_visibility="collapsed")
-                        if c_btn.button("Predict", key=f"btn_{park_name}", use_container_width=True):
-                            try:
-                                ride_id = encoder.transform([selected_ride])[0]
-                                now = datetime.datetime.now()
-                                pred = int(model.predict([[ride_id, 75, 0.0, p_time.hour, now.month, now.weekday(), 0, 0]])[0])
-                                st.info(f"Forecast: {pred} min wait")
-                            except:
-                                st.error("Error")
-                    else:
-                        st.caption("🔮 AI Forecast (Disabled on Free Host)")
-            else:
-                st.warning("No data yet.")
+# B. RIDE SELECTOR (Filtered)
+PARK_RIDES = {
+    "Magic Kingdom": ["Seven Dwarfs Mine Train", "Space Mountain", "Big Thunder Mountain Railroad", "Haunted Mansion", "Pirates of the Caribbean", "TRON Lightcycle / Run"],
+    "Epcot": ["Guardians of the Galaxy: Cosmic Rewind", "Remy's Ratatouille Adventure", "Frozen Ever After", "Test Track", "Soarin' Around the World"],
+    "Hollywood Studios": ["Star Wars: Rise of the Resistance", "Slinky Dog Dash", "The Twilight Zone Tower of Terror", "Rock 'n' Roller Coaster Starring Aerosmith", "Mickey & Minnie's Runaway Railway"],
+    "Animal Kingdom": ["Avatar Flight of Passage", "Na'vi River Journey", "Expedition Everest - Legend of the Forbidden Mountain", "Kilimanjaro Safaris"]
+}
+rides = PARK_RIDES.get(selected_park, [])
+selected_ride = st.selectbox("Attraction", rides)
+
+# --- 5. THE "PLANNER" LOGIC ---
+if selected_ride:
+    current_wait = get_live_wait(selected_ride)
+    if current_wait is None: current_wait = 0
+    
+    # Get the "Typical" curve for today
+    curve = get_typical_day_curve(selected_ride)
+    
+    if not curve.empty:
+        curve['hour'] = curve['hour'].astype(int)
+        
+        # Determine "Verdict"
+        # Find average wait for RIGHT NOW (current hour)
+        current_hour = datetime.datetime.now().hour
+        typical_now = curve[curve['hour'] == current_hour]['avg_wait'].mean()
+        if pd.isna(typical_now): typical_now = current_wait # Fallback
+        
+        diff = current_wait - typical_now
+        
+        st.markdown(f"<div class='plan-card'>", unsafe_allow_html=True)
+        st.caption("VERDICT")
+        
+        if diff < -5:
+            st.markdown(f"<div class='verdict-go'>✅ GO NOW!</div>", unsafe_allow_html=True)
+            st.write(f"Wait is **{int(abs(diff))} min lower** than usual.")
+        elif diff > 10:
+            st.markdown(f"<div class='verdict-wait'>🛑 WAIT</div>", unsafe_allow_html=True)
+            st.write(f"Wait is **{int(diff)} min higher** than usual.")
+        else:
+            st.write("⚠️ Normal Traffic. Go if you want.")
+            
+        col1, col2 = st.columns(2)
+        col1.metric("Wait Now", f"{current_wait} m")
+        col2.metric("Typical", f"{int(typical_now)} m")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # FORECAST CHART
+        st.markdown("### 🕒 Forecast for Today")
+        st.caption("Gray line = Typical wait for this day of week")
+        
+        fig = go.Figure()
+        # Typical Line
+        fig.add_trace(go.Bar(
+            x=curve['hour'], 
+            y=curve['avg_wait'],
+            marker_color='#E0E0E0',
+            name="Typical"
+        ))
+        # Highlight current hour
+        fig.add_trace(go.Bar(
+            x=[current_hour],
+            y=[current_wait],
+            marker_color='#2196F3',
+            name="Right Now"
+        ))
+        
+        fig.update_layout(
+            barmode='overlay',
+            height=200,
+            margin=dict(l=0, r=0, t=0, b=0),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            showlegend=False,
+            xaxis=dict(tickmode='linear', tick0=8, dtick=2, title="Hour of Day"),
+            yaxis=dict(showgrid=True, gridcolor='#f0f0f0')
+        )
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+        
+    else:
+        st.info("Not enough history to predict this ride yet.")
+
+# --- 6. "BEST PARK" LEADERBOARD ---
+st.markdown("---")
+with st.expander("🏆 Which Park is Best Today?"):
+    scores = get_best_park_today()
+    if not scores.empty:
+        st.write("Average wait across all major rides:")
+        for index, row in scores.iterrows():
+            st.progress(min(int(row['AvgWait']), 100) / 100, text=f"{row['Park']}: {row['AvgWait']} min avg")
+    else:
+        st.write("Collecting data...")
