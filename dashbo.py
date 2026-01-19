@@ -5,8 +5,9 @@ import pandas as pd
 import sqlite3
 import plotly.graph_objects as go
 import datetime
+import holidays
 
-# --- 1. SELF-HEALING (Database Reconstruction) ---
+# --- 1. SELF-HEALING ---
 if not os.path.exists("disney_complete.db"):
     db_parts = sorted(glob.glob("disney_complete.db.part*"))
     if db_parts:
@@ -20,7 +21,6 @@ st.set_page_config(page_title="Disney Planner", layout="centered", initial_sideb
 
 st.markdown("""
     <style>
-        /* Clean Mobile Look */
         #MainMenu, footer, header {visibility: hidden;}
         [data-testid="stSidebar"] {display: none;}
         .stApp {background-color: #F5F7FA;}
@@ -30,97 +30,129 @@ st.markdown("""
         .plan-card {
             background-color: white; border-radius: 15px; padding: 20px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05); margin-bottom: 15px;
-            text-align: center; border: 1px solid #eee;
+            border: 1px solid #eee;
         }
         
-        /* Verdict Text */
-        .verdict-go {color: #2ECC71; font-weight: bold; font-size: 1.5rem;}
-        .verdict-wait {color: #E74C3C; font-weight: bold; font-size: 1.5rem;}
+        /* Verdict Colors */
+        .v-go {color: #2ECC71; font-weight: 800;}
+        .v-wait {color: #E74C3C; font-weight: 800;}
         
-        /* Park Selector Styling */
-        div[role="radiogroup"] {justify-content: center;}
+        /* Crowd Level Colors */
+        .crowd-low {color: #2ECC71; font-weight: bold; font-size: 2rem;}
+        .crowd-med {color: #F1C40F; font-weight: bold; font-size: 2rem;}
+        .crowd-high {color: #E67E22; font-weight: bold; font-size: 2rem;}
+        .crowd-max {color: #E74C3C; font-weight: bold; font-size: 2rem;}
     </style>
 """, unsafe_allow_html=True)
 
 DB_NAME = 'disney_complete.db'
 
-# --- 3. DATA FUNCTIONS (The "Lightweight AI") ---
+# --- 3. LOGIC ENGINES ---
+
 def get_live_wait(ride):
-    """Get the very latest wait time"""
+    """Get latest wait time from DB"""
     conn = sqlite3.connect(DB_NAME)
-    # Get last record
     row = pd.read_sql_query(f"SELECT wait_time FROM wait_times WHERE ride_name = ? ORDER BY last_updated DESC LIMIT 1", conn, params=(ride,))
     conn.close()
-    return row.iloc[0]['wait_time'] if not row.empty else None
+    return row.iloc[0]['wait_time'] if not row.empty else 0
 
-def get_typical_day_curve(ride):
-    """
-    Get average wait time per hour for the current day of week.
-    This replaces the 'Heavy AI' with 'Smart Stats'.
-    """
-    day_of_week = datetime.datetime.today().weekday() # 0=Monday, 6=Sunday
+def get_typical_curve(ride):
+    """Get hourly averages for today's day-of-week"""
+    day_of_week = datetime.datetime.today().weekday()
     conn = sqlite3.connect(DB_NAME)
-    
-    # SQL Magic: Average wait times grouped by hour for this specific day of week
-    # We ignore data older than 90 days to keep it fresh
     query = f"""
         SELECT strftime('%H', last_updated) as hour, AVG(wait_time) as avg_wait
         FROM wait_times
-        WHERE ride_name = ? 
-        AND cast(strftime('%w', last_updated) as int) = ?
+        WHERE ride_name = ? AND cast(strftime('%w', last_updated) as int) = ?
         AND last_updated > date('now', '-90 days')
-        GROUP BY hour
-        ORDER BY hour
+        GROUP BY hour ORDER BY hour
     """
     df = pd.read_sql_query(query, conn, params=(ride, day_of_week))
     conn.close()
     return df
 
-def get_best_park_today():
-    """Rank parks by their current average wait time"""
-    conn = sqlite3.connect(DB_NAME)
-    # Get average wait of all rides in the last 2 hours per park? 
-    # Since we don't store 'park' column explicitly in DB (we mapped it in python), 
-    # we have to query ALL rides and map them.
-    
-    # 1. Get latest wait for EVERY ride
-    query = """
-        SELECT ride_name, wait_time 
-        FROM wait_times 
-        WHERE last_updated > datetime('now', '-2 hours')
-        GROUP BY ride_name 
-        ORDER BY last_updated DESC
+def calculate_crowd_score(date_obj, park):
     """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+    The 'Heuristic Brain' - Calculates a 1-10 score based on rules.
+    """
+    score = 3.0 # Base score
     
-    # 2. Map to Parks
-    PARK_MAP = {
-        "Magic Kingdom": ["Seven Dwarfs", "Space Mountain", "Big Thunder", "Haunted Mansion", "Pirates", "Jungle Cruise", "Peter Pan", "TRON", "Tiana"],
-        "Epcot": ["Guardians", "Remy", "Frozen", "Test Track", "Soarin", "Spaceship Earth"],
-        "Hollywood Studios": ["Rise of the Resistance", "Slinky Dog", "Tower of Terror", "Rock 'n' Roller", "Runaway Railway", "Smugglers Run"],
-        "Animal Kingdom": ["Flight of Passage", "Na'vi", "Expedition Everest", "Kilimanjaro", "DINOSAUR"]
-    }
+    # 1. Seasonality
+    month = date_obj.month
+    if month in [9]: score -= 2        # September is dead (Hurricane/School)
+    elif month in [1, 2]: score -= 1   # Jan/Feb quiet
+    elif month in [3, 4]: score += 2   # Spring Break
+    elif month in [6, 7]: score += 2   # Summer
+    elif month in [12]: score += 3     # Christmas season
     
-    park_scores = {}
-    for park, keywords in PARK_MAP.items():
-        # Fuzzy match ride names
-        park_rides = df[df['ride_name'].str.contains('|'.join(keywords), case=False, regex=True)]
-        if not park_rides.empty:
-            avg_wait = park_rides['wait_time'].mean()
-            park_scores[park] = int(avg_wait)
-        else:
-            park_scores[park] = 0
-            
-    return pd.DataFrame(list(park_scores.items()), columns=['Park', 'AvgWait']).sort_values('AvgWait')
+    # 2. Weekend Bump
+    if date_obj.weekday() >= 5: # Sat/Sun
+        score += 2
+    elif date_obj.weekday() == 4: # Friday
+        score += 1
 
-# --- 4. APP INTERFACE ---
+    # 3. Holiday Nuke (Automatic High Scores)
+    us_holidays = holidays.US(years=[date_obj.year])
+    if date_obj in us_holidays:
+        score += 4 # Massive bump for actual holidays
+    
+    # Check for adjacent holiday days (e.g., day after Thanksgiving)
+    for h_date in us_holidays:
+        delta = (date_obj - h_date).days
+        if abs(delta) <= 2 and abs(delta) > 0:
+            score += 2
 
-# A. PARK SELECTOR (Cleaner Radio)
+    # 4. Park Specific Bias
+    if park == "Magic Kingdom": score += 1
+    if park == "Animal Kingdom": score -= 1 # Usually falls off faster
+    
+    # Clamp score 1-10
+    return max(1, min(10, int(score)))
+
+# --- 4. UI: HEADER ---
+# Simple park selector at top
 parks = ["Magic Kingdom", "Epcot", "Hollywood Studios", "Animal Kingdom"]
 selected_park = st.radio("Park", parks, horizontal=True, label_visibility="collapsed")
 
-# B. RIDE SELECTOR (Filtered)
+# --- 5. UI: CROWD CALENDAR (FUTURE) ---
+with st.expander("📅 Future Crowd Calendar", expanded=False):
+    c_date = st.date_input("Check Date", datetime.date.today() + datetime.timedelta(days=1))
+    
+    if c_date:
+        score = calculate_crowd_score(c_date, selected_park)
+        
+        # Determine Color/Label
+        if score <= 4:
+            css_class = "crowd-low"
+            label = "LIGHT CROWDS"
+            desc = "Great day to visit. Walk-ons likely."
+        elif score <= 7:
+            css_class = "crowd-med"
+            label = "MODERATE"
+            desc = "Standard wait times. Use Genie+."
+        elif score <= 9:
+            css_class = "crowd-high"
+            label = "HEAVY"
+            desc = "Crowded. Plan carefully."
+        else:
+            css_class = "crowd-max"
+            label = "MAX CAPACITY"
+            desc = "Pack your patience. It's chaos."
+            
+        # Display Card
+        st.markdown(f"""
+            <div class="plan-card" style="text-align:center;">
+                <div style="font-size:1rem; color:#888;">CROWD LEVEL</div>
+                <div class="{css_class}">{score}/10</div>
+                <div style="font-weight:bold; color:#555;">{label}</div>
+                <div style="font-size:0.9rem; margin-top:5px; color:#666;">{desc}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+# --- 6. UI: TODAY'S PLANNER ---
+st.markdown("### Today's Action Plan")
+
+# Filter Rides
 PARK_RIDES = {
     "Magic Kingdom": ["Seven Dwarfs Mine Train", "Space Mountain", "Big Thunder Mountain Railroad", "Haunted Mansion", "Pirates of the Caribbean", "TRON Lightcycle / Run"],
     "Epcot": ["Guardians of the Galaxy: Cosmic Rewind", "Remy's Ratatouille Adventure", "Frozen Ever After", "Test Track", "Soarin' Around the World"],
@@ -130,84 +162,42 @@ PARK_RIDES = {
 rides = PARK_RIDES.get(selected_park, [])
 selected_ride = st.selectbox("Attraction", rides)
 
-# --- 5. THE "PLANNER" LOGIC ---
 if selected_ride:
-    current_wait = get_live_wait(selected_ride)
-    if current_wait is None: current_wait = 0
-    
-    # Get the "Typical" curve for today
-    curve = get_typical_day_curve(selected_ride)
+    current = get_live_wait(selected_ride)
+    curve = get_typical_curve(selected_ride)
     
     if not curve.empty:
         curve['hour'] = curve['hour'].astype(int)
         
-        # Determine "Verdict"
-        # Find average wait for RIGHT NOW (current hour)
-        current_hour = datetime.datetime.now().hour
-        typical_now = curve[curve['hour'] == current_hour]['avg_wait'].mean()
-        if pd.isna(typical_now): typical_now = current_wait # Fallback
+        # Verdict Logic
+        hour_now = datetime.datetime.now().hour
+        typical = curve[curve['hour'] == hour_now]['avg_wait'].mean()
+        if pd.isna(typical): typical = current
         
-        diff = current_wait - typical_now
+        diff = current - typical
         
         st.markdown(f"<div class='plan-card'>", unsafe_allow_html=True)
-        st.caption("VERDICT")
+        c1, c2 = st.columns(2)
+        c1.metric("Wait Now", f"{current}m")
+        c2.metric("Typical", f"{int(typical)}m")
+        
+        st.write("---")
         
         if diff < -5:
-            st.markdown(f"<div class='verdict-go'>✅ GO NOW!</div>", unsafe_allow_html=True)
-            st.write(f"Wait is **{int(abs(diff))} min lower** than usual.")
+            st.markdown(f"<div class='v-go'>✅ GO NOW</div>", unsafe_allow_html=True)
+            st.caption(f"Saving {int(abs(diff))} mins vs usual.")
         elif diff > 10:
-            st.markdown(f"<div class='verdict-wait'>🛑 WAIT</div>", unsafe_allow_html=True)
-            st.write(f"Wait is **{int(diff)} min higher** than usual.")
+            st.markdown(f"<div class='v-wait'>🛑 WAIT</div>", unsafe_allow_html=True)
+            st.caption(f"Wait is {int(diff)} mins higher than normal.")
         else:
-            st.write("⚠️ Normal Traffic. Go if you want.")
+            st.write("⚖️ Normal Traffic")
             
-        col1, col2 = st.columns(2)
-        col1.metric("Wait Now", f"{current_wait} m")
-        col2.metric("Typical", f"{int(typical_now)} m")
         st.markdown("</div>", unsafe_allow_html=True)
-
-        # FORECAST CHART
-        st.markdown("### 🕒 Forecast for Today")
-        st.caption("Gray line = Typical wait for this day of week")
         
+        # Simple Forecast Chart
+        st.caption("Rest of Day Forecast")
         fig = go.Figure()
-        # Typical Line
-        fig.add_trace(go.Bar(
-            x=curve['hour'], 
-            y=curve['avg_wait'],
-            marker_color='#E0E0E0',
-            name="Typical"
-        ))
-        # Highlight current hour
-        fig.add_trace(go.Bar(
-            x=[current_hour],
-            y=[current_wait],
-            marker_color='#2196F3',
-            name="Right Now"
-        ))
-        
-        fig.update_layout(
-            barmode='overlay',
-            height=200,
-            margin=dict(l=0, r=0, t=0, b=0),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)',
-            showlegend=False,
-            xaxis=dict(tickmode='linear', tick0=8, dtick=2, title="Hour of Day"),
-            yaxis=dict(showgrid=True, gridcolor='#f0f0f0')
-        )
+        fig.add_trace(go.Bar(x=curve['hour'], y=curve['avg_wait'], marker_color='#ddd'))
+        fig.add_trace(go.Bar(x=[hour_now], y=[current], marker_color='#2196F3'))
+        fig.update_layout(height=150, margin=dict(l=0,r=0,t=0,b=0), xaxis=dict(showgrid=False), yaxis=dict(showgrid=False), paper_bgcolor='white', plot_bgcolor='white', showlegend=False)
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-        
-    else:
-        st.info("Not enough history to predict this ride yet.")
-
-# --- 6. "BEST PARK" LEADERBOARD ---
-st.markdown("---")
-with st.expander("🏆 Which Park is Best Today?"):
-    scores = get_best_park_today()
-    if not scores.empty:
-        st.write("Average wait across all major rides:")
-        for index, row in scores.iterrows():
-            st.progress(min(int(row['AvgWait']), 100) / 100, text=f"{row['Park']}: {row['AvgWait']} min avg")
-    else:
-        st.write("Collecting data...")
